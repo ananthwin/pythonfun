@@ -1,8 +1,10 @@
+from ast import parse
 import logging
 import azure.functions as func 
 from azure.servicebus import ServiceBusClient, ServiceBusMessage, TransportType
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, __version__ 
-import json
+import json 
+import hl7tojson.parser
 import hl7
 import datetime
 
@@ -65,6 +67,9 @@ def read_msg_from_sb():
                 if data != False :
                    logging.info("=========read data from blob storage completed===========")
                    logging.info("=========send data to hl7 praser ===========")
+                   logging.info("=========decode data started ===========")
+                   data = data.decode("utf-8")
+                   logging.info("=========decode data completed ===========")
                    validationresult = hl7parser(data)
                    if validationresult:
                        logging.info("=========hl7 parser validation success ,move file from raw to hl7raw storage ===========")
@@ -76,14 +81,14 @@ def read_msg_from_sb():
                        logging.info("=========File moved success  from raw to hl7raw storage ===========")
                        logging.info("Remove file info in service bus started")
                        #remove file info in service bus
-                       receiver.complete_message(msg) 
+                       #receiver.complete_message(msg) 
                        logging.info("Remove file info in service bus completed")
                    else:
                       logging.info("Validation fail ,filename:"+ y["FileName"])
                       blobcopystatus = blobcopy(blob_client.url,"validationfail",y["FileName"])
                       if blobcopystatus:
                           logging.info("removing message in sb-q")
-                          receiver.complete_message(msg)
+                          #receiver.complete_message(msg)
         endtime = datetime.datetime.now()
         logging.info(starttime)
         logging.info(endtime)
@@ -110,14 +115,18 @@ def read_data_from_hl7_blob(container_name,local_file_name):
 def hl7parser(message): 
     try:      
         #parse hl7 message 
-        print("================= hl7.parse started ==========================")
-        h = hl7.parse(message)  
+        print("================= hl7.parse started ==========================")  
+        print(message)
+        #h = hl7.parse(message)  
+        h = hl7tojson.parser.parse(message) 
+        logging.info(h)        
         print(h) 
         print(str(h) == message)
         print(type(h)) 
         return True
     except Exception as ex:
-      print(ex) 
+      h = hl7.parse(message)         
+      logging.info(ex)
       return False
 
  
