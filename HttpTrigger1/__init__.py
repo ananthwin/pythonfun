@@ -7,6 +7,7 @@ import json
 import hl7tojson.parser
 import hl7
 import datetime
+import os
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
@@ -54,6 +55,7 @@ def read_msg_from_sb():
         with receiver:
             for msg in receiver:
                 logging.info("=========received msg from service bus===========")
+                logging.info("Received: " + str(msg))
                 fileinfo = str(msg)
                 y = json.loads(fileinfo)
                 logging.info("Process started ,filename:"+ y["FileName"])
@@ -70,25 +72,19 @@ def read_msg_from_sb():
                    logging.info("=========decode data started ===========")
                    data = data.decode("utf-8")
                    logging.info("=========decode data completed ===========")
-                   validationresult = hl7parser(data)
+                   validationresult = hl7parser(y["FileName"] , data)
                    if validationresult:
                        logging.info("=========hl7 parser validation success ,move file from raw to hl7raw storage ===========")
                        #after validation success send file from raw to  hl7raw container  
-                       copied_blob = blob_service_client.get_blob_client(container = "hl7raw", blob = y["FileName"])
-                       copy = copied_blob.start_copy_from_url(blob_client.url)
-                       props = copied_blob.get_blob_properties()
-                       logging.info(props.copy.status)
-                       logging.info("=========File moved success  from raw to hl7raw storage ===========")
+                       #copied_blob = blob_service_client.get_blob_client(container = "hl7raw", blob = y["FileName"])
+                       #copy = copied_blob.start_copy_from_url(blob_client.url)
+                       #props = copied_blob.get_blob_properties()
+                       #logging.info(props.copy.status)
+                       #logging.info("=========File moved success  from raw to hl7raw storage ===========")
                        logging.info("Remove file info in service bus started")
-                       #remove file info in service bus
-                       #receiver.complete_message(msg) 
+                       #remove file info in service bus 
+                       receiver.complete_message(msg) 
                        logging.info("Remove file info in service bus completed")
-                   else:
-                      logging.info("Validation fail ,filename:"+ y["FileName"])
-                      blobcopystatus = blobcopy(blob_client.url,"validationfail",y["FileName"])
-                      if blobcopystatus:
-                          logging.info("removing message in sb-q")
-                          #receiver.complete_message(msg)
         endtime = datetime.datetime.now()
         logging.info(starttime)
         logging.info(endtime)
@@ -112,18 +108,26 @@ def read_data_from_hl7_blob(container_name,local_file_name):
       return False
 
 #hl7 parser operation
-def hl7parser(message): 
+def hl7parser(filename , message): 
     try:      
         #parse hl7 message 
         print("================= hl7.parse started ==========================")  
         print(message)
         #h = hl7.parse(message)  
-        h = hl7tojson.parser.parse(message) 
-        logging.info(h)        
-        print(h) 
-        print(str(h) == message)
-        print(type(h)) 
-        return True
+        h = hl7tojson.parser.parse(message)
+        logging.info('filename before' + os.path.splitext(filename)[0])
+        fn = os.path.splitext(filename)[0]
+        logging.info('filename after' + fn)
+        if (uploadfiletoblob('hl7jsonfunapp', fn + '.json', h)):
+            logging.info(h)        
+            print(h) 
+            print(str(h) == message)
+            print(type(h)) 
+            logging.info('jsonfile created success' + fn)
+            return True
+        else:
+            logging.info('fail to create json' + fn)
+            return False
     except Exception as ex:
       h = hl7.parse(message)         
       logging.info(ex)
@@ -143,8 +147,27 @@ def blobcopy(sourceboburl,container,filename):
       print(ex) 
       return False
     
-   
+
+#create new file in blob
+def uploadfiletoblob(containername, filename, data): 
+    logging.info('uploading file to ' + containername)
+    try:       
+        # Upload the created file  
+        y = json.dumps(data)
+        blob_client = blob_service_client.get_blob_client(container = containername, blob = filename)  
+        blob_client.upload_blob(y)
+        props = blob_client.get_blob_properties()
+        print(props.copy.status)
+        logging.info('uploading file completed ')
+        return True
+    except Exception as ex:
+      logging.error('create json blob failed' + ex)
+      print(ex) 
+      return False  
+
 #read_msg_from_sb()
+
+#uploadfiletoblob("hl7jsonfunapp", "test.json", "hello")
 
 
 
